@@ -1,0 +1,55 @@
+@using aplusdownloader.Services
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudAlert Severity="Severity.Info">
+                A autenticação é feita diretamente no site da biblioteca. A senha não é enviada
+                nem armazenada pelo downloader.
+            </MudAlert>
+
+            <MudText Typo="Typo.body1">
+                Abra a tela de login, entre normalmente com sua conta e, depois, volte para esta
+                janela e confirme a autenticação.
+            </MudText>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Login"
+                       OnClick="OpenLogin">
+                Abrir login da biblioteca
+            </MudButton>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                O download continuará usando somente a sessão autenticada do seu navegador.
+            </MudText>
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Confirm">
+            Já estou autenticado
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public string ViewerUrl { get; set; } = string.Empty;
+
+    [Inject]
+    private BrowserBookStore BookStore { get; set; } = default!;
+
+    private async Task OpenLogin()
+    {
+        await BookStore.OpenAuthenticationAsync(ViewerUrl);
+    }
+
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+
+    private void Cancel() => MudDialog.Cancel();
+}

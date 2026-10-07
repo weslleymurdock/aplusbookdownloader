@@ -1,14 +1,396 @@
 @page "/"
+@using aplusdownloader.Models
+@using aplusdownloader.Services
 
-<PageTitle>Home</PageTitle>
+<PageTitle>A+ Ebook Downloader</PageTitle>
 
-<MudText Typo="Typo.h3" GutterBottom="true">Hello, world!</MudText>
-<MudText Class="mb-8">Welcome to your new app, powered by MudBlazor and the .NET 10 Template!</MudText>
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
+    <MudStack Spacing="3">
+        <MudText Typo="Typo.h4">A+ Ebook Downloader</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">
+            Informe a URL do visualizador da biblioteca para baixar as páginas autorizadas para
+            armazenamento local e montar um PDF offline.
+        </MudText>
 
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_viewerUrl"
+                              Label="URL do ebook"
+                              Placeholder="https://biblioteca-a.read.garden/viewer/9788533500242/capa"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Link"
+                              FullWidth="true" />
 
-<MudAlert Severity="Severity.Normal" ContentAlignment="HorizontalAlignment.Start">
-    You can find documentation and examples on our website here:
-    <MudLink Href="https://mudblazor.com" Target="_blank" Typo="Typo.body2" Color="Color.Primary">
-        <b>www.mudblazor.com</b>
-    </MudLink>
-</MudAlert>
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Login"
+                               Disabled="@(!_isValidBook || _busy)"
+                               OnClick="Authenticate">
+                        Autenticar
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               Disabled="@(!_isValidBook || _busy)"
+                               OnClick="Discover">
+                        Listar páginas
+                    </MudButton>
+
+                    @if (_pageCount > 0)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   Disabled="@(_busy || _pageCount == 0)"
+                                   OnClick="Download">
+                            Baixar páginas
+                        </MudButton>
+                    }
+
+                    @if (_storedPages.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.DeleteSweep"
+                                   Disabled="@_busy"
+                                   OnClick="Clear">
+                            Limpar armazenamento
+                        </MudButton>
+                    }
+                </MudStack>
+
+                @if (!_isValidBook && !string.IsNullOrWhiteSpace(_viewerUrl))
+                {
+                    <MudAlert Severity="Severity.Warning">
+                        URL inválida. Use uma URL no formato
+                        <b>/viewer/&lt;identificador-do-livro&gt;/...</b>.
+                    </MudAlert>
+                }
+
+                @if (_pageCount > 0)
+                {
+                    <MudAlert Severity="Severity.Info">
+                        Livro <b>@_bookId</b>: @_pageCount página(s) encontrada(s).
+                        Armazenadas localmente: @_storedPages.Count.
+                    </MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+
+        @if (_busy)
+        {
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.body2">@_status</MudText>
+                    <MudProgressLinear Color="Color.Primary"
+                                       Value="@_progress"
+                                       Rounded="true" />
+                    <MudText Typo="Typo.caption">
+                        @_currentPage / @_pageCount
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+                @_error
+            </MudAlert>
+        }
+
+        @if (_storedPages.Count > 0)
+        {
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudStack Spacing="3">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.h5">Ebook montado</MudText>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                                   Disabled="@_busy"
+                                   OnClick="ExportPdf">
+                            Baixar PDF
+                        </MudButton>
+                    </MudStack>
+
+                    <MudDivider />
+
+                    <MudGrid Spacing="2">
+                        @foreach (var page in _storedPages)
+                        {
+                            <MudItem xs="12" sm="6" md="4" lg="3" xl="2">
+                                <MudPaper Elevation="1" Class="pa-2">
+                                    <MudStack Spacing="1">
+                                        <MudImage Src="@GetObjectUrl(page.Page)"
+                                                  Alt="@($"Página {page.Page}")"
+                                                  Fluid="true"
+                                                  Class="ebook-page-preview" />
+                                        <MudText Typo="Typo.caption" Align="Align.Center">
+                                            Página @page.Page
+                                        </MudText>
+                                    </MudStack>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudStack>
+            </MudPaper>
+        }
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Inject]
+    private IDialogService DialogService { get; set; } = default!;
+
+    [Inject]
+    private BrowserBookStore BookStore { get; set; } = default!;
+
+    [Inject]
+    private ISnackbar Snackbar { get; set; } = default!;
+
+    private string _viewerUrl = string.Empty;
+    private string _bookId = string.Empty;
+    private int _pageCount;
+    private int _currentPage;
+    private double _progress;
+    private string _status = string.Empty;
+    private string? _error;
+    private bool _busy;
+    private readonly List<StoredPage> _storedPages = [];
+    private readonly Dictionary<int, string> _objectUrls = [];
+
+    private bool _isValidBook =>
+        BookUrlParser.TryGetBookId(_viewerUrl, out _);
+
+    private async Task Authenticate()
+    {
+        _error = null;
+
+        if (!BookUrlParser.TryGetBookId(_viewerUrl, out var bookId))
+        {
+            return;
+        }
+
+        _bookId = bookId;
+
+        var parameters = new DialogParameters
+        {
+            [nameof(AuthenticationDialog.ViewerUrl)] = BookUrlParser.GetViewerUrl(bookId)
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<AuthenticationDialog>(
+            "Autenticação da biblioteca",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Snackbar.Add(
+                "Autenticação concluída. Você pode listar e baixar as páginas.",
+                Severity.Success);
+        }
+    }
+
+    private async Task Discover()
+    {
+        if (!BookUrlParser.TryGetBookId(_viewerUrl, out var bookId))
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _bookId = bookId;
+        _status = "Procurando as páginas disponíveis...";
+        _progress = 0;
+
+        try
+        {
+            _pageCount = await BookStore.DiscoverPageCountAsync(bookId);
+            await RefreshStoredPages();
+
+            if (_pageCount == 0)
+            {
+                _error = "Nenhuma página foi encontrada.";
+            }
+            else
+            {
+                Snackbar.Add(
+                    $"{_pageCount} página(s) encontrada(s).",
+                    Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível listar as páginas: {GetMessage(ex)}";
+        }
+        finally
+        {
+            _busy = false;
+            _status = string.Empty;
+        }
+    }
+
+    private async Task Download()
+    {
+        if (string.IsNullOrWhiteSpace(_bookId) || _pageCount <= 0)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            await RefreshStoredPages();
+            var stored = _storedPages.Select(page => page.Page).ToHashSet();
+
+            for (var page = 1; page <= _pageCount; page++)
+            {
+                _currentPage = page;
+                _progress = page * 100d / _pageCount;
+
+                if (stored.Contains(page))
+                {
+                    _status = $"Página {page} já está no armazenamento local.";
+                    continue;
+                }
+
+                _status = $"Baixando página {page} de {_pageCount}...";
+                var result = await BookStore.DownloadPageAsync(_bookId, page);
+
+                if (!result.Success)
+                {
+                    _error =
+                        $"Falha na página {page}: {result.Error ?? "erro desconhecido"}. " +
+                        "Verifique se a sessão da biblioteca está autenticada e se o navegador " +
+                        "permite requisições CORS para o CDN.";
+
+                    break;
+                }
+
+                stored.Add(page);
+                await InvokeAsync(StateHasChanged);
+            }
+
+            await RefreshStoredPages();
+
+            if (_storedPages.Count == _pageCount)
+            {
+                Snackbar.Add(
+                    "Todas as páginas foram armazenadas localmente.",
+                    Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error =
+                $"O download foi interrompido: {GetMessage(ex)}";
+        }
+        finally
+        {
+            _busy = false;
+            _status = string.Empty;
+        }
+    }
+
+    private async Task RefreshStoredPages()
+    {
+        if (string.IsNullOrWhiteSpace(_bookId))
+        {
+            return;
+        }
+
+        _storedPages.Clear();
+        _storedPages.AddRange(await BookStore.GetPagesAsync(_bookId));
+        _storedPages.Sort((left, right) => left.Page.CompareTo(right.Page));
+
+        foreach (var page in _storedPages)
+        {
+            if (!_objectUrls.ContainsKey(page.Page))
+            {
+                _objectUrls[page.Page] =
+                    await BookStore.CreatePageObjectUrlAsync(_bookId, page.Page);
+            }
+        }
+    }
+
+    private string GetObjectUrl(int page) =>
+        _objectUrls.TryGetValue(page, out var url) ? url : string.Empty;
+
+    private async Task ExportPdf()
+    {
+        if (string.IsNullOrWhiteSpace(_bookId) || _storedPages.Count == 0)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _status = "Montando o PDF...";
+
+        try
+        {
+            await BookStore.ExportPdfAsync(
+                _bookId,
+                $"ebook-{_bookId}.pdf");
+
+            Snackbar.Add(
+                "PDF gerado e enviado para download.",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível gerar o PDF: {GetMessage(ex)}";
+        }
+        finally
+        {
+            _busy = false;
+            _status = string.Empty;
+        }
+    }
+
+    private async Task Clear()
+    {
+        if (string.IsNullOrWhiteSpace(_bookId))
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            await BookStore.ClearBookAsync(_bookId);
+            _storedPages.Clear();
+            _objectUrls.Clear();
+            Snackbar.Add("Páginas removidas do armazenamento local.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Não foi possível limpar o armazenamento: {GetMessage(ex)}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string GetMessage(Exception exception) =>
+        exception.GetBaseException().Message;
+}
