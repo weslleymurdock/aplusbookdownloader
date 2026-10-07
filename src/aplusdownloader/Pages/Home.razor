@@ -120,17 +120,17 @@
                     <MudDivider />
 
                     <MudGrid Spacing="2">
-                        @foreach (var page in _storedPages)
+                        @foreach (var p in _storedPages)
                         {
                             <MudItem xs="12" sm="6" md="4" lg="3" xl="2">
                                 <MudPaper Elevation="1" Class="pa-2">
                                     <MudStack Spacing="1">
-                                        <MudImage Src="@GetObjectUrl(page.Page)"
-                                                  Alt="@($"Página {page.Page}")"
+                                        <MudImage Src="@GetObjectUrl(p.Page)"
+                                                  Alt="@($"Página {p.Page}")"
                                                   Fluid="true"
                                                   Class="ebook-page-preview" />
                                         <MudText Typo="Typo.caption" Align="Align.Center">
-                                            Página @page.Page
+                                            Página @p.Page
                                         </MudText>
                                     </MudStack>
                                 </MudPaper>
